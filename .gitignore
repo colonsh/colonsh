@@ -1,0 +1,75 @@
+# -------------------------
+# Go build artifacts
+# -------------------------
+/colonsh
+/colonsh.exe
+/colonsh-*-*
+/dist/
+/build/
+/bin/
+/out/
+
+# Go cache & modules
+/pkg/
+/vendor/
+*.mod.tmp
+
+# Test binaries
+*.test
+
+# -------------------------
+# OS-specific
+# -------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# macOS metadata on external disks
+._*
+
+# Linux
+*~
+
+# -------------------------
+# Editor / IDE files
+# -------------------------
+
+# VSCode
+.vscode/
+.vscode-test/
+*.code-workspace
+
+# -------------------------
+# Logs
+# -------------------------
+*.log
+*.tmp
+
+# -------------------------
+# Temporary files
+# -------------------------
+*.bak
+*.old
+*.orig
+
+# -------------------------
+# Build & release assets
+# -------------------------
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# Homebrew / Chocolatey packaging artifacts (future)
+*.nupkg
+*.nuspec
+Formula/
+
+# -------------------------
+# Local config (NOT colon.json)
+# -------------------------
+/tmp/
+/local/
+/config/
