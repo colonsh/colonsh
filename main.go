@@ -429,6 +429,7 @@ func loadOrInitConfig(path string) (*Config, error) {
 func defaultConfig() *Config {
 	return &Config{
 		Version: "0.0.1",
+		OpenCmd: "code .",
 		Aliases: []Alias{
 			{
 				Name: "config",
