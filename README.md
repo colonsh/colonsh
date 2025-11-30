@@ -6,7 +6,7 @@
 ### Homebrew (Recommended)
 This is the easiest and recommended way to install `colonsh` on macOS or Linux.
 ```bash
-brew tap colonsh/tap
+brew tap stephenbaidu/tap
 brew install colonsh
 ```
 Then initialize and reload your shell:
@@ -16,7 +16,7 @@ source ~/.zshrc   # Reload your shell profile, eg:
 ```
 
 ### Alternative Installation (All Platforms)
-Download a binary from the [GitHub Releases page](https://github.com/colonsh/colonsh/releases) page and move it to a directory in your PATH:
+Download a binary from the [GitHub Releases page](https://github.com/stephenbaidu/colonsh/releases) page and move it to a directory in your PATH:
 - macOS/Linux → /usr/local/bin
 - Windows → a custom bin folder
 
@@ -50,7 +50,7 @@ Example `colonsh.json`
   ],
   "git_repos": [
     {
-      "slug": "colonsh/colonsh",
+      "slug": "stephenbaidu/colonsh",
       "actions": [
         { 
           "name": "Deploy locally", 
@@ -95,7 +95,7 @@ The **`git_repos`** array defines specific actions and behaviors for individual 
 
 | Key | Description |
 | :--- | :--- |
-| **`slug`** | The unique identifier for the repository, typically in the format `organization/repo-name` (e.g., `colonsh/colonsh`). |
+| **`slug`** | The unique identifier for the repository, typically in the format `organization/repo-name` (e.g., `stephenbaidu/colonsh`). |
 | **`actions`** | A list of structured commands that only become available via `:pa` when your current working directory is inside this specific repository. |
 | **`actions.name`** | The descriptive name displayed in the interactive list when running `:pa`. |
 | **`actions.cmd`** | The shell command to be executed when this action is selected. |
