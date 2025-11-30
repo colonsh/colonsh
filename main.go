@@ -16,36 +16,112 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
+const toolVersion = "0.0.1"
+
+// CommandFunc is the standardized signature for all subcommand handlers.
+type CommandFunc func(cfg *Config, args []string) error
+
 type BuiltinAlias struct {
-	Name     string // without leading ':'
-	Desc     string // for printHelp
-	Template string // alias RHS; use {{BIN}} where COLONSH_BIN should go
+	Name     string      // without leading ':'
+	Desc     string      // for printHelp
+	Template string      // alias RHS; use {{BIN}} where COLONSH_BIN should go
+	Handler  CommandFunc // The Go function to execute for this command
 }
 
 // Order matters: simpler/common commands first usually looks better
 var builtinAliases = []BuiltinAlias{
 	// --- Core / Meta ---
-	{Name: "help", Desc: "Show this help menu", Template: "{{BIN}}"}, // Handled specially as ::
-	{Name: "init", Desc: "Emit shell integration code (stdout)", Template: ""},
-	{Name: "setup", Desc: "Modify profile to auto-load colonsh", Template: ""}, // NEW: Added setup command
-	{Name: "config", Desc: "Open colonsh config file", Template: "{{BIN}} config"},
+	{
+		Name: "help", Desc: "Show this help menu", Template: "{{BIN}}",
+		// No handler needed, handled as default path in run()
+	},
+	{
+		Name: "init", Desc: "Emit shell integration code (stdout)", Template: "",
+		// No handler needed, handled early in run()
+	},
+	{
+		Name: "setup", Desc: "Modify profile to auto-load colonsh", Template: "",
+		// No handler needed, handled early in run()
+	},
+	{
+		Name: "config", Desc: "Open colonsh config file", Template: "{{BIN}} config",
+		Handler: func(_ *Config, _ []string) error {
+			return cmdConfig()
+		},
+	},
+	{
+		Name: "version", Desc: "Show colonsh version", Template: "{{BIN}} version",
+		// No handler needed, handled early in run()
+	},
 
 	// --- Project Navigation ---
-	{Name: "pd", Desc: "Select a project directory", Template: `cd "$({{BIN}} pd)"`},
-	{Name: "cd", Desc: "Select subdirectory in CWD", Template: `cd "$({{BIN}} cd)"`},
-	{Name: "po", Desc: "Open project in IDE", Template: "{{BIN}} po"},
-	{Name: "pa", Desc: "Run actions for project", Template: "{{BIN}} pa"},
+	{
+		Name: "pd", Desc: "Select a project directory", Template: `cd "$({{BIN}} pd)"`,
+		Handler: func(cfg *Config, _ []string) error {
+			return cmdPD(cfg)
+		},
+	},
+	{
+		Name: "cd", Desc: "Select subdirectory in CWD", Template: `cd "$({{BIN}} cd)"`,
+		Handler: func(_ *Config, _ []string) error {
+			return cmdCD()
+		},
+	},
+	{
+		Name: "po", Desc: "Open project in IDE", Template: "{{BIN}} po",
+		Handler: func(cfg *Config, _ []string) error {
+			return cmdPO(cfg)
+		},
+	},
+	{
+		Name: "pa", Desc: "Run actions for project", Template: "{{BIN}} pa",
+		Handler: func(cfg *Config, _ []string) error {
+			return cmdPA(cfg)
+		},
+	},
 
 	// --- Git Helpers (Subcommands) ---
-	{Name: "gb", Desc: "Select a git branch", Template: "{{BIN}} gb"},
-	{Name: "gnb", Desc: "Create a new branch", Template: "{{BIN}} gnb"},
-	{Name: "gdb", Desc: "Delete a branch", Template: "{{BIN}} gdb"},
-	{Name: "gc", Desc: "git commit -m <msg>", Template: "{{BIN}} gc"},
-	{Name: "gca", Desc: "git commit --amend", Template: "{{BIN}} gca"},
-	{Name: "gcam", Desc: "git commit --amend -m <msg>", Template: "{{BIN}} gcam"},
-	{Name: "prs", Desc: "Open Pull Requests URL", Template: "{{BIN}} prs"},
+	{
+		Name: "gb", Desc: "Select a git branch", Template: "{{BIN}} gb",
+		Handler: func(_ *Config, _ []string) error {
+			return cmdGB()
+		},
+	},
+	{
+		Name: "gbn", Desc: "Create a new branch", Template: "{{BIN}} gbn",
+		Handler: func(_ *Config, args []string) error {
+			return cmdGBN(args)
+		},
+	},
+	{
+		Name: "gbd", Desc: "Delete a branch", Template: "{{BIN}} gbd",
+		Handler: func(_ *Config, _ []string) error {
+			return cmdGBD()
+		},
+	},
+	{
+		Name: "gc", Desc: "git commit -m <msg>", Template: "{{BIN}} gc",
+		Handler: func(_ *Config, args []string) error {
+			return cmdGC(args)
+		},
+	},
+	{
+		Name: "gca", Desc: "git commit --amend", Template: "git commit --amend",
+	},
+	{
+		Name: "gcam", Desc: "git commit --amend -m <msg>", Template: "{{BIN}} gcam",
+		Handler: func(_ *Config, args []string) error {
+			return cmdGCAM(args)
+		},
+	},
+	{
+		Name: "prs", Desc: "Open Pull Requests URL", Template: "{{BIN}} prs",
+		Handler: func(_ *Config, _ []string) error {
+			return cmdPRS()
+		},
+	},
 
-	// --- Pure Shell Aliases (No colonsh subcommand counterpart) ---
+	// --- Pure Shell Aliases (No Go handler needed) ---
 	{Name: "main", Desc: "Switch to main branch", Template: "git checkout main"},
 	{Name: "master", Desc: "Switch to master branch", Template: "git checkout master"},
 	{Name: "gs", Desc: "git status", Template: "git status"},
@@ -56,6 +132,19 @@ var builtinAliases = []BuiltinAlias{
 	{Name: "gl", Desc: "git log --oneline --graph", Template: "git log --oneline --graph --decorate"},
 }
 
+// commandHandlers maps a command name string to its execution function.
+var commandHandlers = map[string]CommandFunc{}
+
+// init populates the commandHandlers map for O(1) lookup in run().
+// This is the key step to break the initialization cycle.
+func init() {
+	for _, ba := range builtinAliases {
+		if ba.Handler != nil {
+			commandHandlers[ba.Name] = ba.Handler
+		}
+	}
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "colonsh:", err)
@@ -64,59 +153,60 @@ func main() {
 }
 
 func run() error {
-	cfgPath, err := colonConfigPath()
-	if err != nil {
-		return err
-	}
-
-	cfg, err := loadOrInitConfig(cfgPath)
-	if err != nil {
-		return err
-	}
-
 	args := os.Args[1:]
+
+	if len(args) > 0 {
+		// Handle version flag
+		if args[0] == "--version" || args[0] == "-v" || args[0] == "version" {
+			return cmdVersion()
+		}
+
+		// Handle setup flag
+		if args[0] == "setup" {
+			return cmdSetup()
+		}
+	}
+
+	cfg, err := loadOrInitConfig()
+	if err != nil {
+		return err
+	}
+
+	if len(args) > 0 {
+		// Handle init flag
+		if args[0] == "init" {
+			shellArg := "zsh"
+			if len(args) > 1 {
+				shellArg = args[1]
+			}
+			return cmdInit(shellArg, cfg)
+		}
+	}
+
 	if len(args) == 0 {
 		printHelp(cfg)
 		return nil
 	}
 
-	switch args[0] {
-	case "init":
-		shellArg := "zsh"
-		if len(args) > 1 {
-			shellArg = args[1]
-		}
-		return cmdInit(shellArg, cfg)
-	case "setup":
-		return cmdSetup(cfg)
-	case "config":
-		return cmdConfig(cfgPath)
-	case "pd":
-		return cmdPD(cfg)
-	case "po":
-		return cmdPO(cfg)
-	case "pa":
-		return cmdPA(cfg)
-	case "gb":
-		return cmdGB()
-	case "gnb":
-		return cmdGNB(args[1:])
-	case "gdb":
-		return cmdGDB()
-	case "gc":
-		return cmdGC(args[1:])
-	case "gca":
-		return cmdGCA()
-	case "gcam":
-		return cmdGCAM(args[1:])
-	case "prs":
-		return cmdPRS()
-	case "cd":
-		return cmdCD()
-	default:
+	commandName := args[0]
+	handler, ok := commandHandlers[commandName]
+
+	if !ok {
+		// If command not found, display help
 		printHelp(cfg)
 		return nil
 	}
+
+	// Pass the config, the remaining arguments (args[1:]), and the config path
+	return handler(cfg, args[1:])
+}
+
+// version – print version number
+// -----------------------------------------------------------------------------
+func cmdVersion() error {
+	// Now prints the globally defined toolVersion constant
+	fmt.Println("colonsh version:", toolVersion)
+	return nil
 }
 
 func printHelp(cfg *Config) {
@@ -200,6 +290,7 @@ $COLONSH_BIN='%s'
 # Root alias (::)
 Function Global:colonsh { & $COLONSH_BIN @args }
 Set-Alias -Name '::' -Value colonsh
+Set-Alias -Name ':help' -Value colonsh
 
 # --- Built-in Aliases (PowerShell) ---
 `, exe)
@@ -224,6 +315,7 @@ export COLONSH_BIN=%q
 
 # Root help / entrypoint
 alias ::='$COLONSH_BIN'
+alias :help='$COLONSH_BIN'
 
 # --- Built-in Aliases (UNIX) ---
 `, filepath.Base(exe), shellArg, exe)
@@ -266,7 +358,7 @@ alias ::='$COLONSH_BIN'
 // setup – automatically modify the user's shell profile file
 // -----------------------------------------------------------------------------
 
-func cmdSetup(cfg *Config) error {
+func cmdSetup() error {
 	targetShell := detectShell()
 
 	// 1. Determine the path to the user's profile file
@@ -498,7 +590,12 @@ func findCurrentRepo(cfg *Config) *GitRepo {
 // -----------------------------------------------------------------------------
 // config – open config file in default editor
 // -----------------------------------------------------------------------------
-func cmdConfig(configPath string) error {
+func cmdConfig() error {
+	configPath, err := colonConfigPath()
+	if err != nil {
+		return err
+	}
+
 	// Ensure file exists
 	if _, err := os.Stat(configPath); err != nil {
 		return fmt.Errorf("config file not found at %s: %w", configPath, err)
@@ -712,7 +809,7 @@ func cmdGB() error {
 // gnb – create new branch
 // -----------------------------------------------------------------------------
 
-func cmdGNB(args []string) error {
+func cmdGBN(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: colonsh gnb <branch-name>")
 	}
@@ -737,7 +834,7 @@ func cmdGNB(args []string) error {
 // gdb – delete multiple branches (exclude main/master)
 // -----------------------------------------------------------------------------
 
-func cmdGDB() error {
+func cmdGBD() error {
 	all, err := gitBranchesRaw()
 	if err != nil {
 		return err
@@ -834,14 +931,6 @@ func cmdGC(args []string) error {
 	}
 	msg := strings.Join(args, " ")
 	cmd := exec.Command("git", "commit", "-m", msg)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
-}
-
-func cmdGCA() error {
-	cmd := exec.Command("git", "commit", "--amend")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

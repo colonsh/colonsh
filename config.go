@@ -63,21 +63,25 @@ func colonConfigPath() (string, error) {
 }
 
 // loadOrInitConfig loads the config file or creates a default one if it doesn't exist.
-func loadOrInitConfig(path string) (*Config, error) {
-	if _, err := os.Stat(path); err == nil {
-		data, err := os.ReadFile(path)
+func loadOrInitConfig() (*Config, error) {
+	configPath, err := colonConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(configPath); err == nil {
+		data, err := os.ReadFile(configPath)
 		if err != nil {
 			return nil, err
 		}
 		var cfg Config
 		if err := json.Unmarshal(data, &cfg); err != nil {
-			return nil, fmt.Errorf("failed to parse %s: %w", path, err)
+			return nil, fmt.Errorf("failed to parse %s: %w", configPath, err)
 		}
 		return &cfg, nil
 	}
 
 	// Create default config if not found
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return nil, err
 	}
 	cfg := defaultConfig()
@@ -85,11 +89,11 @@ func loadOrInitConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
 		return nil, err
 	}
 
-	fmt.Println("colonsh: no config found, created new one at", path)
+	fmt.Println("colonsh: no config found, created new one at", configPath)
 	fmt.Println("colonsh: edit the file to add your projects and actions.")
 	return cfg, nil
 }
