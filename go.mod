@@ -1,4 +1,4 @@
-module github.com/colonsh/colonsh
+module github.com/stephenbaidu/colonsh
 
 go 1.25.4
 
