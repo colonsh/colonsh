@@ -89,7 +89,7 @@ var builtinAliases = []BuiltinAlias{
 		},
 	},
 	{
-		Name: "gnb", Desc: "Create a new git branch", Template: "{{BIN}} gnb",
+		Name: "gnb", Desc: "Create a new git branch with <username>/ prefix. Usage: :gnb branch-name", Template: "{{BIN}} gnb",
 		Handler: func(_ *Config, args []string) error {
 			return cmdGitNewBranch(args)
 		},
@@ -101,7 +101,7 @@ var builtinAliases = []BuiltinAlias{
 		},
 	},
 	{
-		Name: "gc", Desc: "git commit -m <msg>", Template: "{{BIN}} gc",
+		Name: "gc", Desc: "git commit -m <msg>. Usage: :gc msg without quotes", Template: "{{BIN}} gc",
 		Handler: func(_ *Config, args []string) error {
 			return cmdGitCommit(args)
 		},
@@ -110,7 +110,7 @@ var builtinAliases = []BuiltinAlias{
 		Name: "gca", Desc: "git commit --amend", Template: "git commit --amend",
 	},
 	{
-		Name: "gcam", Desc: "git commit --amend -m <msg>", Template: "{{BIN}} gcam",
+		Name: "gcam", Desc: "git commit --amend -m <msg>. Usage: :gcam msg without quotes", Template: "{{BIN}} gcam",
 		Handler: func(_ *Config, args []string) error {
 			return cmdGitCommitAmendWithMessage(args)
 		},
