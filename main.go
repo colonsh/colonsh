@@ -16,7 +16,7 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
-const Version = "0.0.2"
+const Version = "0.0.3"
 
 // CommandFunc is the standardized signature for all subcommand handlers.
 type CommandFunc func(cfg *Config, args []string) error
