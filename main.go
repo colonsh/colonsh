@@ -46,7 +46,7 @@ var builtinAliases = []BuiltinAlias{
 	{
 		Name: "config", Desc: "Open colonsh config file", Template: "{{BIN}} config",
 		Handler: func(_ *Config, _ []string) error {
-			return cmdConfig()
+			return cmdOpenConfig()
 		},
 	},
 	{
@@ -58,25 +58,25 @@ var builtinAliases = []BuiltinAlias{
 	{
 		Name: "pd", Desc: "Select a project directory", Template: `cd "$({{BIN}} pd)"`,
 		Handler: func(cfg *Config, _ []string) error {
-			return cmdPD(cfg)
+			return cmdProjectSelectDir(cfg)
 		},
 	},
 	{
 		Name: "cd", Desc: "Select subdirectory in CWD", Template: `cd "$({{BIN}} cd)"`,
 		Handler: func(_ *Config, _ []string) error {
-			return cmdCD()
+			return cmdChangeDir()
 		},
 	},
 	{
 		Name: "po", Desc: "Open project in IDE", Template: "{{BIN}} po",
 		Handler: func(cfg *Config, _ []string) error {
-			return cmdPO(cfg)
+			return cmdProjectOpen(cfg)
 		},
 	},
 	{
 		Name: "pa", Desc: "Run actions for project", Template: "{{BIN}} pa",
 		Handler: func(cfg *Config, _ []string) error {
-			return cmdPA(cfg)
+			return cmdProjectActions(cfg)
 		},
 	},
 
@@ -84,25 +84,25 @@ var builtinAliases = []BuiltinAlias{
 	{
 		Name: "gb", Desc: "Select a git branch", Template: "{{BIN}} gb",
 		Handler: func(_ *Config, _ []string) error {
-			return cmdGB()
+			return cmdGitSelectBranch()
 		},
 	},
 	{
-		Name: "gbn", Desc: "Create a new branch", Template: "{{BIN}} gbn",
+		Name: "gnb", Desc: "Create a new git branch", Template: "{{BIN}} gnb",
 		Handler: func(_ *Config, args []string) error {
-			return cmdGBN(args)
+			return cmdGitNewBranch(args)
 		},
 	},
 	{
-		Name: "gbd", Desc: "Delete a branch", Template: "{{BIN}} gbd",
+		Name: "gdb", Desc: "Delete git branches", Template: "{{BIN}} gdb",
 		Handler: func(_ *Config, _ []string) error {
-			return cmdGBD()
+			return cmdGitDeleteBranch()
 		},
 	},
 	{
 		Name: "gc", Desc: "git commit -m <msg>", Template: "{{BIN}} gc",
 		Handler: func(_ *Config, args []string) error {
-			return cmdGC(args)
+			return cmdGitCommit(args)
 		},
 	},
 	{
@@ -111,13 +111,13 @@ var builtinAliases = []BuiltinAlias{
 	{
 		Name: "gcam", Desc: "git commit --amend -m <msg>", Template: "{{BIN}} gcam",
 		Handler: func(_ *Config, args []string) error {
-			return cmdGCAM(args)
+			return cmdGitCommitAmendWithMessage(args)
 		},
 	},
 	{
 		Name: "prs", Desc: "Open Pull Requests URL", Template: "{{BIN}} prs",
 		Handler: func(_ *Config, _ []string) error {
-			return cmdPRS()
+			return cmdOpenPullRequests()
 		},
 	},
 
@@ -137,7 +137,6 @@ var builtinAliases = []BuiltinAlias{
 var commandHandlers = map[string]CommandFunc{}
 
 // init populates the commandHandlers map for O(1) lookup in run().
-// This is the key step to break the initialization cycle.
 func init() {
 	for _, ba := range builtinAliases {
 		if ba.Handler != nil {
@@ -202,14 +201,6 @@ func run() error {
 	return handler(cfg, args[1:])
 }
 
-// version – print version number
-// -----------------------------------------------------------------------------
-func cmdVersion() error {
-	// Now prints the globally defined Version constant
-	fmt.Println("colonsh version:", Version)
-	return nil
-}
-
 func printHelp(cfg *Config) {
 	fmt.Printf("Welcome to colonsh! Your config file is at ~/%s\n", configFileName)
 
@@ -237,7 +228,7 @@ func printHelp(cfg *Config) {
 
 	for _, ba := range builtinAliases {
 		// Skip commands without a template (init, setup)
-		if ba.Template == "" || ba.Name == "help" {
+		if ba.Template == "" {
 			continue
 		}
 		name := ":" + ba.Name
@@ -258,15 +249,12 @@ func printHelp(cfg *Config) {
 	fmt.Println()
 }
 
-func shellQuoteSingle(s string) string {
-	// Escapes single quotes by closing the string, adding an escaped quote, and reopening.
-	// ' -> '\''
-	return strings.ReplaceAll(s, `'`, `'\''`)
+func cmdVersion() error {
+	// Now prints the globally defined Version constant
+	fmt.Println("colonsh version:", Version)
+	return nil
 }
 
-// -----------------------------------------------------------------------------
-// init – emit shell integration code (to stdout)
-// -----------------------------------------------------------------------------
 func cmdInit(shellArg string, cfg *Config) error {
 	// If the user didn't specify the shell, use detection logic
 	if shellArg != "zsh" && shellArg != "bash" && shellArg != "powershell" {
@@ -355,10 +343,6 @@ alias :help='$COLONSH_BIN'
 	return nil
 }
 
-// -----------------------------------------------------------------------------
-// setup – automatically modify the user's shell profile file
-// -----------------------------------------------------------------------------
-
 func cmdSetup() error {
 	targetShell := detectShell()
 
@@ -434,9 +418,401 @@ fi
 	return nil
 }
 
-// -----------------------------------------------------------------------------
-// Helpers
-// -----------------------------------------------------------------------------
+func cmdOpenConfig() error {
+	configPath, err := colonConfigPath()
+	if err != nil {
+		return err
+	}
+
+	// Ensure file exists
+	if _, err := os.Stat(configPath); err != nil {
+		return fmt.Errorf("config file not found at %s: %w", configPath, err)
+	}
+
+	fmt.Println("Opening config:", configPath)
+
+	// Use the new generic function to open the local file path
+	return openPath(configPath)
+}
+
+func cmdProjectSelectDir(cfg *Config) error {
+	var projects []string
+
+	for _, pd := range cfg.ProjectDirs {
+		root, err := expandTilde(pd.Path)
+		if err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+
+		exclude := make(map[string]struct{}, len(pd.Exclude))
+		for _, ex := range pd.Exclude {
+			exclude[ex] = struct{}{}
+		}
+
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if _, skip := exclude[name]; skip {
+				continue
+			}
+			projects = append(projects, filepath.Join(root, name))
+		}
+	}
+
+	if len(projects) == 0 {
+		return errors.New("no projects found from project_dirs")
+	}
+
+	var selected string
+	opts := []huh.Option[string]{}
+	for _, p := range projects {
+		opts = append(opts, huh.NewOption(p, p))
+	}
+
+	if err := huh.NewSelect[string]().
+		Title("Select a project directory").
+		Options(opts...).
+		Value(&selected).
+		Run(); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		return errors.New("no project selected")
+	}
+
+	// print for alias: alias :pd='cd "$(colonsh pd)"'
+	fmt.Println(selected)
+	return nil
+}
+
+func cmdProjectOpen(cfg *Config) error {
+	var baseDir string
+
+	// 1. Enforce requirement: Must be inside a Git repository.
+	if !inGitRepo() {
+		return errors.New("command 'po' currently expects to be run inside a git repository")
+	}
+
+	// 2. Get the root directory of the repository.
+	var err error
+	baseDir, err = gitRoot()
+	if err != nil {
+		return fmt.Errorf("failed to get git root: %w", err)
+	}
+
+	// 3. Find the specific repository config using the new lookup function.
+	// This function handles getting the slug and finding the matching config entry.
+	repo := findCurrentRepo(cfg)
+
+	// 4. Determine the open command, prioritizing repo-specific setting.
+
+	// Start with global default (from config or hardcoded)
+	openCmd := cfg.OpenCmd
+	if openCmd == "" {
+		openCmd = "code ."
+	}
+
+	// Override with repo-specific setting if a matching GitRepo was found
+	if repo != nil && repo.OpenCmd != "" {
+		openCmd = repo.OpenCmd
+	}
+
+	// 5. Execute the command in the root directory.
+	fmt.Printf("Opening project at %s with: %s\n", baseDir, openCmd)
+	return runShellCommand(openCmd, baseDir)
+}
+
+func cmdProjectActions(cfg *Config) error {
+	if !inGitRepo() {
+		return errors.New("not inside a git repository")
+	}
+
+	root, err := gitRoot()
+	if err != nil {
+		return err
+	}
+
+	repo := findCurrentRepo(cfg)
+	if repo == nil || len(repo.Actions) == 0 {
+		return errors.New("no actions found for this repository in colonsh.json")
+	}
+
+	opts := []huh.Option[string]{}
+	for _, a := range repo.Actions {
+		opts = append(opts, huh.NewOption(a.Name, a.Name))
+	}
+
+	var selectedName string
+	if err := huh.NewSelect[string]().
+		Title("Select an action").
+		Options(opts...).
+		Value(&selectedName).
+		Run(); err != nil {
+		return err
+	}
+	if selectedName == "" {
+		fmt.Println("No action selected.")
+		return nil
+	}
+
+	var action *RepoAction
+	for i := range repo.Actions {
+		if repo.Actions[i].Name == selectedName {
+			action = &repo.Actions[i]
+			break
+		}
+	}
+	if action == nil {
+		return errors.New("selected action not found")
+	}
+
+	runDir := root
+	if action.Dir != "" && action.Dir != "." {
+		runDir = filepath.Join(root, action.Dir)
+	}
+
+	fmt.Printf("Executing action %q in %s: %s\n", action.Name, runDir, action.Cmd)
+	return runShellCommand(action.Cmd, runDir)
+}
+
+func cmdGitSelectBranch() error {
+	branches, err := gitBranchesRaw()
+	if err != nil {
+		return err
+	}
+	if len(branches) == 0 {
+		return errors.New("no branches found")
+	}
+
+	opts := []huh.Option[string]{}
+	for _, b := range branches {
+		opts = append(opts, huh.NewOption(b, b))
+	}
+
+	var selected string
+	if err := huh.NewSelect[string]().
+		Title("Select a branch").
+		Options(opts...).
+		Value(&selected).
+		Run(); err != nil {
+		return err
+	}
+	if selected == "" {
+		fmt.Println("No branch selected.")
+		return nil
+	}
+
+	fmt.Println("Switching to branch:", selected)
+	cmd := exec.Command("git", "checkout", selected)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+func cmdGitNewBranch(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: colonsh gnb <branch-name>")
+	}
+	branchName := strings.Join(args, "-")
+
+	u, err := user.Current()
+	username := "user"
+	if err == nil && u.Username != "" {
+		username = u.Username
+	}
+	full := fmt.Sprintf("%s/%s", username, branchName)
+
+	fmt.Println("Creating and switching to branch:", full)
+	cmd := exec.Command("git", "checkout", "-b", full)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+func cmdGitDeleteBranch() error {
+	all, err := gitBranchesRaw()
+	if err != nil {
+		return err
+	}
+	var branches []string
+	for _, b := range all {
+		if b == "main" || b == "master" {
+			continue
+		}
+		branches = append(branches, b)
+	}
+
+	if len(branches) == 0 {
+		fmt.Println("No branches available for deletion (all filtered).")
+		return nil
+	}
+
+	opts := []huh.Option[string]{}
+	for _, b := range branches {
+		opts = append(opts, huh.NewOption(b, b))
+	}
+
+	var selected []string
+	if err := huh.NewMultiSelect[string]().
+		Title("Select branch(es) to delete").
+		Options(opts...).
+		Value(&selected).
+		Run(); err != nil {
+		return err
+	}
+
+	if len(selected) == 0 {
+		fmt.Println("No branches selected.")
+		return nil
+	}
+
+	fmt.Println("Branches to delete:")
+	for _, b := range selected {
+		fmt.Println("  " + b)
+	}
+
+	var confirm bool
+	if err := huh.NewConfirm().
+		Title("Proceed with deletion?").
+		Affirmative("Yes").
+		Negative("No").
+		Value(&confirm).
+		Run(); err != nil {
+		return err
+	}
+	if !confirm {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
+	for _, b := range selected {
+		fmt.Println("Deleting branch:", b)
+		cmd := exec.Command("git", "branch", "-d", b)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		_ = cmd.Run() // ignore individual failures, just print output
+	}
+
+	return nil
+}
+
+func cmdGitCommit(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: colonsh gc <commit-message>")
+	}
+	msg := strings.Join(args, " ")
+	cmd := exec.Command("git", "commit", "-m", msg)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+func cmdGitCommitAmendWithMessage(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: colonsh gcam <commit-message>")
+	}
+	msg := strings.Join(args, " ")
+	cmd := exec.Command("git", "commit", "--amend", "-m", msg)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+func cmdOpenPullRequests() error {
+	if !inGitRepo() {
+		return errors.New("this is not a git repository")
+	}
+	gurl, err := getRawGitRemoteURL()
+	if err != nil {
+		return err
+	}
+
+	// Convert SSH git@github.com:owner/repo.git → https://github.com/owner/repo/pulls
+	// or just append /pulls if already https.
+	var pullsURL string
+	if strings.HasPrefix(gurl, "git@") {
+		// git@github.com:owner/repo.git
+		parts := strings.SplitN(strings.TrimPrefix(gurl, "git@"), ":", 2)
+		if len(parts) == 2 {
+			host := parts[0]
+			path := strings.TrimSuffix(parts[1], ".git")
+			pullsURL = fmt.Sprintf("https://%s/%s/pulls", host, path)
+		}
+	} else if strings.HasPrefix(gurl, "https://") || strings.HasPrefix(gurl, "http://") {
+		pullsURL = strings.TrimSuffix(gurl, ".git") + "/pulls"
+	}
+
+	if pullsURL == "" {
+		return fmt.Errorf("could not construct pulls URL from remote %q", gurl)
+	}
+
+	fmt.Println("Opening:", pullsURL)
+	return openPath(pullsURL)
+}
+
+func cmdChangeDir() error {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return err
+	}
+
+	var dirs []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		dirs = append(dirs, name)
+	}
+
+	if len(dirs) == 0 {
+		return errors.New("no subdirectories found")
+	}
+
+	opts := []huh.Option[string]{}
+	for _, d := range dirs {
+		opts = append(opts, huh.NewOption(d, d))
+	}
+
+	var selected string
+	if err := huh.NewSelect[string]().
+		Title("Select a directory").
+		Options(opts...).
+		Value(&selected).
+		Run(); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		fmt.Println("No directory selected.")
+		return nil
+	}
+
+	// Print for alias: alias :cd='cd "$(colonsh cd)"'
+	fmt.Println(selected)
+	return nil
+}
+
+func shellQuoteSingle(s string) string {
+	// Escapes single quotes by closing the string, adding an escaped quote, and reopening.
+	// ' -> '\''
+	return strings.ReplaceAll(s, `'`, `'\''`)
+}
 
 func detectShell() string {
 	shellPath := os.Getenv("SHELL")
@@ -585,324 +961,6 @@ func findCurrentRepo(cfg *Config) *GitRepo {
 	return nil
 }
 
-// NOTE: You must update all callers (cmdPA, cmdPO) to use this new function and handle the case
-// where it returns nil, instead of handling errors from gitRepoSlug().
-
-// -----------------------------------------------------------------------------
-// config – open config file in default editor
-// -----------------------------------------------------------------------------
-func cmdConfig() error {
-	configPath, err := colonConfigPath()
-	if err != nil {
-		return err
-	}
-
-	// Ensure file exists
-	if _, err := os.Stat(configPath); err != nil {
-		return fmt.Errorf("config file not found at %s: %w", configPath, err)
-	}
-
-	fmt.Println("Opening config:", configPath)
-
-	// Use the new generic function to open the local file path
-	return openPath(configPath)
-}
-
-// -----------------------------------------------------------------------------
-// pd – project directory selection
-// -----------------------------------------------------------------------------
-
-func cmdPD(cfg *Config) error {
-	var projects []string
-
-	for _, pd := range cfg.ProjectDirs {
-		root, err := expandTilde(pd.Path)
-		if err != nil {
-			return err
-		}
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			continue
-		}
-
-		exclude := make(map[string]struct{}, len(pd.Exclude))
-		for _, ex := range pd.Exclude {
-			exclude[ex] = struct{}{}
-		}
-
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if _, skip := exclude[name]; skip {
-				continue
-			}
-			projects = append(projects, filepath.Join(root, name))
-		}
-	}
-
-	if len(projects) == 0 {
-		return errors.New("no projects found from project_dirs")
-	}
-
-	var selected string
-	opts := []huh.Option[string]{}
-	for _, p := range projects {
-		opts = append(opts, huh.NewOption(p, p))
-	}
-
-	if err := huh.NewSelect[string]().
-		Title("Select a project directory").
-		Options(opts...).
-		Value(&selected).
-		Run(); err != nil {
-		return err
-	}
-
-	if selected == "" {
-		return errors.New("no project selected")
-	}
-
-	// print for alias: alias :pd='cd "$(colonsh pd)"'
-	fmt.Println(selected)
-	return nil
-}
-
-// -----------------------------------------------------------------------------
-// po – open project (IDE / open_cmd)
-// -----------------------------------------------------------------------------
-
-func cmdPO(cfg *Config) error {
-	var baseDir string
-
-	// 1. Enforce requirement: Must be inside a Git repository.
-	if !inGitRepo() {
-		return errors.New("command 'po' currently expects to be run inside a git repository")
-	}
-
-	// 2. Get the root directory of the repository.
-	var err error
-	baseDir, err = gitRoot()
-	if err != nil {
-		return fmt.Errorf("failed to get git root: %w", err)
-	}
-
-	// 3. Find the specific repository config using the new lookup function.
-	// This function handles getting the slug and finding the matching config entry.
-	repo := findCurrentRepo(cfg)
-
-	// 4. Determine the open command, prioritizing repo-specific setting.
-
-	// Start with global default (from config or hardcoded)
-	openCmd := cfg.OpenCmd
-	if openCmd == "" {
-		openCmd = "code ."
-	}
-
-	// Override with repo-specific setting if a matching GitRepo was found
-	if repo != nil && repo.OpenCmd != "" {
-		openCmd = repo.OpenCmd
-	}
-
-	// 5. Execute the command in the root directory.
-	fmt.Printf("Opening project at %s with: %s\n", baseDir, openCmd)
-	return runShellCommand(openCmd, baseDir)
-}
-
-// -----------------------------------------------------------------------------
-// pa – run repo actions
-// -----------------------------------------------------------------------------
-
-func cmdPA(cfg *Config) error {
-	if !inGitRepo() {
-		return errors.New("not inside a git repository")
-	}
-
-	root, err := gitRoot()
-	if err != nil {
-		return err
-	}
-
-	repo := findCurrentRepo(cfg)
-	if repo == nil || len(repo.Actions) == 0 {
-		return errors.New("no actions found for this repository in colonsh.json")
-	}
-
-	opts := []huh.Option[string]{}
-	for _, a := range repo.Actions {
-		opts = append(opts, huh.NewOption(a.Name, a.Name))
-	}
-
-	var selectedName string
-	if err := huh.NewSelect[string]().
-		Title("Select an action").
-		Options(opts...).
-		Value(&selectedName).
-		Run(); err != nil {
-		return err
-	}
-	if selectedName == "" {
-		fmt.Println("No action selected.")
-		return nil
-	}
-
-	var action *RepoAction
-	for i := range repo.Actions {
-		if repo.Actions[i].Name == selectedName {
-			action = &repo.Actions[i]
-			break
-		}
-	}
-	if action == nil {
-		return errors.New("selected action not found")
-	}
-
-	runDir := root
-	if action.Dir != "" && action.Dir != "." {
-		runDir = filepath.Join(root, action.Dir)
-	}
-
-	fmt.Printf("Executing action %q in %s: %s\n", action.Name, runDir, action.Cmd)
-	return runShellCommand(action.Cmd, runDir)
-}
-
-// -----------------------------------------------------------------------------
-// gb – select branch & checkout
-// -----------------------------------------------------------------------------
-
-func cmdGB() error {
-	branches, err := gitBranchesRaw()
-	if err != nil {
-		return err
-	}
-	if len(branches) == 0 {
-		return errors.New("no branches found")
-	}
-
-	opts := []huh.Option[string]{}
-	for _, b := range branches {
-		opts = append(opts, huh.NewOption(b, b))
-	}
-
-	var selected string
-	if err := huh.NewSelect[string]().
-		Title("Select a branch").
-		Options(opts...).
-		Value(&selected).
-		Run(); err != nil {
-		return err
-	}
-	if selected == "" {
-		fmt.Println("No branch selected.")
-		return nil
-	}
-
-	fmt.Println("Switching to branch:", selected)
-	cmd := exec.Command("git", "checkout", selected)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
-}
-
-// -----------------------------------------------------------------------------
-// gnb – create new branch
-// -----------------------------------------------------------------------------
-
-func cmdGBN(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: colonsh gnb <branch-name>")
-	}
-	branchName := strings.Join(args, "-")
-
-	u, err := user.Current()
-	username := "user"
-	if err == nil && u.Username != "" {
-		username = u.Username
-	}
-	full := fmt.Sprintf("%s/%s", username, branchName)
-
-	fmt.Println("Creating and switching to branch:", full)
-	cmd := exec.Command("git", "checkout", "-b", full)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
-}
-
-// -----------------------------------------------------------------------------
-// gdb – delete multiple branches (exclude main/master)
-// -----------------------------------------------------------------------------
-
-func cmdGBD() error {
-	all, err := gitBranchesRaw()
-	if err != nil {
-		return err
-	}
-	var branches []string
-	for _, b := range all {
-		if b == "main" || b == "master" {
-			continue
-		}
-		branches = append(branches, b)
-	}
-
-	if len(branches) == 0 {
-		fmt.Println("No branches available for deletion (all filtered).")
-		return nil
-	}
-
-	opts := []huh.Option[string]{}
-	for _, b := range branches {
-		opts = append(opts, huh.NewOption(b, b))
-	}
-
-	var selected []string
-	if err := huh.NewMultiSelect[string]().
-		Title("Select branch(es) to delete").
-		Options(opts...).
-		Value(&selected).
-		Run(); err != nil {
-		return err
-	}
-
-	if len(selected) == 0 {
-		fmt.Println("No branches selected.")
-		return nil
-	}
-
-	fmt.Println("Branches to delete:")
-	for _, b := range selected {
-		fmt.Println("  " + b)
-	}
-
-	var confirm bool
-	if err := huh.NewConfirm().
-		Title("Proceed with deletion?").
-		Affirmative("Yes").
-		Negative("No").
-		Value(&confirm).
-		Run(); err != nil {
-		return err
-	}
-	if !confirm {
-		fmt.Println("Aborted.")
-		return nil
-	}
-
-	for _, b := range selected {
-		fmt.Println("Deleting branch:", b)
-		cmd := exec.Command("git", "branch", "-d", b)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-		_ = cmd.Run() // ignore individual failures, just print output
-	}
-
-	return nil
-}
-
 func gitBranchesRaw() ([]string, error) {
 	cmd := exec.Command("git", "branch", "--format=%(refname:short)")
 	var out bytes.Buffer
@@ -920,70 +978,6 @@ func gitBranchesRaw() ([]string, error) {
 		branches = append(branches, line)
 	}
 	return branches, nil
-}
-
-// -----------------------------------------------------------------------------
-// gc / gca / gcam – git commits
-// -----------------------------------------------------------------------------
-
-func cmdGC(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: colonsh gc <commit-message>")
-	}
-	msg := strings.Join(args, " ")
-	cmd := exec.Command("git", "commit", "-m", msg)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
-}
-
-func cmdGCAM(args []string) error {
-	if len(args) == 0 {
-		return errors.New("usage: colonsh gcam <commit-message>")
-	}
-	msg := strings.Join(args, " ")
-	cmd := exec.Command("git", "commit", "--amend", "-m", msg)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
-}
-
-// -----------------------------------------------------------------------------
-// prs – open PRs URL
-// -----------------------------------------------------------------------------
-
-func cmdPRS() error {
-	if !inGitRepo() {
-		return errors.New("this is not a git repository")
-	}
-	gurl, err := getRawGitRemoteURL()
-	if err != nil {
-		return err
-	}
-
-	// Convert SSH git@github.com:owner/repo.git → https://github.com/owner/repo/pulls
-	// or just append /pulls if already https.
-	var pullsURL string
-	if strings.HasPrefix(gurl, "git@") {
-		// git@github.com:owner/repo.git
-		parts := strings.SplitN(strings.TrimPrefix(gurl, "git@"), ":", 2)
-		if len(parts) == 2 {
-			host := parts[0]
-			path := strings.TrimSuffix(parts[1], ".git")
-			pullsURL = fmt.Sprintf("https://%s/%s/pulls", host, path)
-		}
-	} else if strings.HasPrefix(gurl, "https://") || strings.HasPrefix(gurl, "http://") {
-		pullsURL = strings.TrimSuffix(gurl, ".git") + "/pulls"
-	}
-
-	if pullsURL == "" {
-		return fmt.Errorf("could not construct pulls URL from remote %q", gurl)
-	}
-
-	fmt.Println("Opening:", pullsURL)
-	return openPath(pullsURL)
 }
 
 // openPath opens the given path (file or URL) using the system's default handler.
@@ -1038,54 +1032,4 @@ func runLinuxBrowserCommand(url string) error {
 		}
 	}
 	return fmt.Errorf("failed to open browser/URL using all known commands: %s", url)
-}
-
-// -----------------------------------------------------------------------------
-// cd – select subdirectory in CWD (prints path)
-// -----------------------------------------------------------------------------
-
-func cmdCD() error {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		return err
-	}
-
-	var dirs []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		dirs = append(dirs, name)
-	}
-
-	if len(dirs) == 0 {
-		return errors.New("no subdirectories found")
-	}
-
-	opts := []huh.Option[string]{}
-	for _, d := range dirs {
-		opts = append(opts, huh.NewOption(d, d))
-	}
-
-	var selected string
-	if err := huh.NewSelect[string]().
-		Title("Select a directory").
-		Options(opts...).
-		Value(&selected).
-		Run(); err != nil {
-		return err
-	}
-
-	if selected == "" {
-		fmt.Println("No directory selected.")
-		return nil
-	}
-
-	// Print for alias: alias :cd='cd "$(colonsh cd)"'
-	fmt.Println(selected)
-	return nil
 }
