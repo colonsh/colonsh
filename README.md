@@ -4,19 +4,51 @@
 
 [![Go Build Status](https://github.com/stephenbaidu/colonsh/actions/workflows/release.yml/badge.svg)](https://github.com/stephenbaidu/colonsh/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Homebrew Version](https://img.shields.io/badge/Homebrew-v0.0.2-brightgreen)](https://github.com/stephenbaidu/homebrew-tap)
+[![Homebrew Version](https://img.shields.io/badge/Homebrew-v0.0.3-brightgreen)](https://github.com/stephenbaidu/homebrew-tap)
 
 ***
 
 ## Usage
 ```bash
-::       # show help menu
-:help    # show help menu
-:pd      # cd into a project directory by selecting from choice list
-:pa      # run a project-specific action from choice list
-:prs     # Open Pull Requests URL
-:main    # Switch to main branch
-:master  # Switch to master branch
+➜  ~ :help
+Welcome to colonsh! Your config file is at ~/colonsh.json
+
+Built-in aliases:
+  ::        Show this help menu
+  :help     Show this help menu
+  :config   Open colonsh config file
+  :version  Show colonsh version
+  :custom   Show custom aliases
+  :pd       Select a project directory
+  :cd       Select subdirectory in CWD
+  :po       Open project in IDE
+  :pa       Run actions for project
+  :gb       Select a git branch
+  :gnb      Create a new git branch with <username>/ prefix. Usage: :gnb branch-name
+  :gdb      Delete git branches
+  :gc       git commit -m <msg>. Usage: :gc msg without quotes
+  :gca      git commit --amend
+  :gcam     git commit --amend -m <msg>. Usage: :gcam msg without quotes
+  :prs      Open Pull Requests URL
+  :main     Switch to main branch
+  :master   Switch to master branch
+  :gs       git status
+  :ll       git pull
+  :gaa      git add .
+  :gcan     git commit --amend --no-edit
+  :gp       git push
+  :gpf      git push --force
+  :gl       git log --oneline --graph
+
+Custom aliases:
+  :json    code ~/colonsh.json
+  :dev     cd ~/Development
+  :c       code .
+  :source  source ~/.zshrc
+  :dps     docker ps
+  :gr1     git rebase -i HEAD~1
+  :gr2     git rebase -i HEAD~2
+  :gr3     git rebase -i HEAD~3
 ```
 You can add custom aliases by adding name/cmd pairs under `aliases` of config file, [see Configuration](#configuration). Adding `{ "name": "c", "cmd": "code ." }` allows you to use `:c` to run `code .`
 
