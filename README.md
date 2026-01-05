@@ -4,7 +4,7 @@
 
 [![Go Build Status](https://github.com/stephenbaidu/colonsh/actions/workflows/release.yml/badge.svg)](https://github.com/stephenbaidu/colonsh/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Homebrew Version](https://img.shields.io/badge/Homebrew-v0.0.3-brightgreen)](https://github.com/stephenbaidu/homebrew-tap)
+[![Homebrew Version](https://img.shields.io/badge/Homebrew-v0.0.4-brightgreen)](https://github.com/stephenbaidu/homebrew-tap)
 
 ***
 
@@ -20,7 +20,7 @@ Built-in aliases:
   :version  Show colonsh version
   :custom   Show custom aliases
   :pd       Select a project directory
-  :cd       Select subdirectory in CWD
+  :cd       Select subdirectory in CWD. Usage: :cd [depth]
   :po       Open project in IDE
   :pa       Run actions for project
   :gb       Select a git branch
