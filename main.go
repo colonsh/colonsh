@@ -64,7 +64,7 @@ var builtinAliases = []BuiltinAlias{
 		},
 	},
 	{
-		Name: "cd", Desc: "Select subdirectory in CWD. Usage: :cd [depth]", Template: `cd "$({{BIN}} cd)"`,
+		Name: "cd", Desc: "Select subdirectory in CWD. Usage: :cd [.|depth]", Template: `cd "$({{BIN}} cd)"`,
 		Handler: func(_ *Config, args []string) error {
 			return cmdChangeDir(args)
 		},

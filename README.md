@@ -20,7 +20,7 @@ Built-in aliases:
   :version  Show colonsh version
   :custom   Show custom aliases
   :pd       Select a project directory
-  :cd       Select subdirectory in CWD. Usage: :cd [depth]
+  :cd       Select subdirectory in CWD. Usage: :cd [.|depth]
   :po       Open project in IDE
   :pa       Run actions for project
   :gb       Select a git branch
