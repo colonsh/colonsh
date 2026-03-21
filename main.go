@@ -348,13 +348,13 @@ alias :help='$COLONSH_BIN'
 			buf.WriteString(fmt.Sprintf("alias :%s='%s'\n", ba.Name, shellQuoteSingle(cmd)))
 		}
 		buf.WriteString(`
-		# --- Functions for commands that need arg forwarding ---
-		__colonsh_cd() { builtin cd "$("$COLONSH_BIN" cd "$@")"; }
-		alias :cd='__colonsh_cd'
+# --- Functions for commands that need arg forwarding ---
+__colonsh_cd() { builtin cd "$("$COLONSH_BIN" cd "$@")"; }
+alias :cd='__colonsh_cd'
 
-		__colonsh_pd() { builtin cd "$("$COLONSH_BIN" pd "$@")"; }
-		alias :pd='__colonsh_pd'
-		`)
+__colonsh_pd() { builtin cd "$("$COLONSH_BIN" pd "$@")"; }
+alias :pd='__colonsh_pd'
+`)
 	}
 
 	// --- Custom Aliases from Config (Appended to both) ---
@@ -643,7 +643,7 @@ func cmdGitSelectBranch() error {
 	}
 
 	fmt.Println("Switching to branch:", selected)
-	cmd := exec.Command("git", "checkout", selected)
+	cmd := exec.Command("git", "checkout", "--", selected)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -664,7 +664,7 @@ func cmdGitNewBranch(args []string) error {
 	full := fmt.Sprintf("%s/%s", username, branchName)
 
 	fmt.Println("Creating and switching to branch:", full)
-	cmd := exec.Command("git", "checkout", "-b", full)
+	cmd := exec.Command("git", "checkout", "-b", "--", full)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -727,16 +727,19 @@ func cmdGitDeleteBranch() error {
 		return nil
 	}
 
+	var deleteErr error
 	for _, b := range selected {
 		fmt.Println("Deleting branch:", b)
-		cmd := exec.Command("git", "branch", "-d", b)
+		cmd := exec.Command("git", "branch", "-d", "--", b)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
-		_ = cmd.Run() // ignore individual failures, just print output
+		if err := cmd.Run(); err != nil {
+			deleteErr = err
+		}
 	}
 
-	return nil
+	return deleteErr
 }
 
 func cmdGitCommit(args []string) error {
@@ -774,21 +777,9 @@ func cmdOpenPullRequests() error {
 
 	// Convert SSH git@github.com:owner/repo.git → https://github.com/owner/repo/pulls
 	// or just append /pulls if already https.
-	var pullsURL string
-	if strings.HasPrefix(gurl, "git@") {
-		// git@github.com:owner/repo.git
-		parts := strings.SplitN(strings.TrimPrefix(gurl, "git@"), ":", 2)
-		if len(parts) == 2 {
-			host := parts[0]
-			path := strings.TrimSuffix(parts[1], ".git")
-			pullsURL = fmt.Sprintf("https://%s/%s/pulls", host, path)
-		}
-	} else if strings.HasPrefix(gurl, "https://") || strings.HasPrefix(gurl, "http://") {
-		pullsURL = strings.TrimSuffix(gurl, ".git") + "/pulls"
-	}
-
-	if pullsURL == "" {
-		return fmt.Errorf("could not construct pulls URL from remote %q", gurl)
+	pullsURL, err := buildPullsURL(gurl)
+	if err != nil {
+		return err
 	}
 
 	fmt.Println("Opening:", pullsURL)
@@ -948,40 +939,59 @@ func getRawGitRemoteURL() (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-// gitRepoSlug executes the Git command via a helper and returns the canonical repository slug
-// in the format "user/repo" (e.g., "stephenbaidu/colonsh").
-func gitRepoSlug() (string, error) {
-	// 1. Get the raw remote URL using the helper (no exec.Command duplication)
-	rawURL, err := getRawGitRemoteURL()
-	if err != nil {
-		return "", err
-	}
-
-	// 2. Normalize the URL (Replaces normalizeGitURL)
+// parseGitSlug extracts the "user/repo" slug from any common Git remote URL format.
+// Handles SSH (git@github.com:user/repo.git), HTTPS, and HTTP URLs.
+func parseGitSlug(rawURL string) (string, error) {
 	s := strings.TrimSpace(rawURL)
-
-	// a. Remove .git suffix
 	s = strings.TrimSuffix(s, ".git")
 
-	// b. Handle SSH format: git@github.com:user/repo
 	if strings.HasPrefix(s, "git@") {
+		// git@github.com:user/repo  →  github.com/user/repo
 		s = strings.TrimPrefix(s, "git@")
 		s = strings.Replace(s, ":", "/", 1)
 	}
 
-	// c. Handle HTTP/HTTPS
 	s = strings.TrimPrefix(s, "https://")
 	s = strings.TrimPrefix(s, "http://")
-	// Result: host/user/repo (e.g., github.com/user/repo)
+	// s is now: host/user/repo
 
-	// 3. Extract the "user/repo" part
 	parts := strings.SplitN(s, "/", 2)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("could not extract slug from normalized URL: %s", s)
+	if len(parts) < 2 || parts[1] == "" {
+		return "", fmt.Errorf("could not extract slug from remote URL: %s", rawURL)
+	}
+	return parts[1], nil
+}
+
+// buildPullsURL constructs the GitHub pull-requests URL from a raw remote URL.
+func buildPullsURL(rawURL string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+
+	var pullsURL string
+	if after, ok := strings.CutPrefix(rawURL, "git@"); ok {
+		parts := strings.SplitN(after, ":", 2)
+		if len(parts) == 2 {
+			host := parts[0]
+			path := strings.TrimSuffix(parts[1], ".git")
+			pullsURL = fmt.Sprintf("https://%s/%s/pulls", host, path)
+		}
+	} else if strings.HasPrefix(rawURL, "https://") || strings.HasPrefix(rawURL, "http://") {
+		pullsURL = strings.TrimSuffix(rawURL, ".git") + "/pulls"
 	}
 
-	// The slug is the second part: user/repo
-	return parts[1], nil
+	if pullsURL == "" {
+		return "", fmt.Errorf("could not construct pulls URL from remote %q", rawURL)
+	}
+	return pullsURL, nil
+}
+
+// gitRepoSlug executes the Git command via a helper and returns the canonical repository slug
+// in the format "user/repo" (e.g., "stephenbaidu/colonsh").
+func gitRepoSlug() (string, error) {
+	rawURL, err := getRawGitRemoteURL()
+	if err != nil {
+		return "", err
+	}
+	return parseGitSlug(rawURL)
 }
 
 // findCurrentRepo executes the Git command to find the current repository slug
