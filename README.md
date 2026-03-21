@@ -156,17 +156,32 @@ The **`git_repos`** array defines specific actions and behaviors for individual 
 
 ### Building from Source
 
-```bash
-# Build the binary in the current directory
-go build . 
+A `Makefile` is provided for common tasks:
 
-# Run the compiled binary
+```bash
+make build      # Build the binary
+make test       # Run all tests
+make install    # Build and install to $HOME/bin
+make uninstall  # Remove the installed binary from $HOME/bin
+make clean      # Remove the built binary from the project directory
+```
+
+After installing, reload your shell:
+```bash
+source ~/.zshrc
+```
+
+Or build manually:
+```bash
+go build -o colonsh .
 ./colonsh init zsh
 ```
 
 ### Testing
 
 ```bash
+make test
+# or
 go test ./...
 ```
 
