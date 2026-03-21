@@ -12,7 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time" // NEW: Required for cmdSetup
+	"time"
 
 	"github.com/charmbracelet/huh"
 )
@@ -355,6 +355,23 @@ alias :cd='__colonsh_cd'
 __colonsh_pd() { builtin cd "$("$COLONSH_BIN" pd "$@")"; }
 alias :pd='__colonsh_pd'
 `)
+
+		// --- Zsh completion ---
+		if shellArg == "zsh" {
+			var names []string
+			for _, ba := range builtinAliases {
+				names = append(names, ba.Name)
+			}
+			fmt.Fprintf(&buf, `
+# --- Zsh completion for colonsh ---
+_%s() {
+  local -a cmds
+  cmds=(%s)
+  _describe 'command' cmds
+}
+compdef _%s %s
+`, filepath.Base(exe), strings.Join(names, " "), filepath.Base(exe), filepath.Base(exe))
+		}
 	}
 
 	// --- Custom Aliases from Config (Appended to both) ---
