@@ -25,6 +25,12 @@ jobs:
       - name: Run Go Mod Tidy
         run: go mod tidy
 
+      - name: Run Go Vet
+        run: go vet ./...
+
+      - name: Run Tests
+        run: go test ./...
+
       # --------------------------------------------------------
       # Build Binaries for Multiple Platforms
       # The '.' means build the current package (main.go in the root)
